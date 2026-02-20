@@ -12,38 +12,16 @@ use storage::{get_and_increment_project_id, load_project, save_project};
 pub use types::{Project, ProjectStatus};
 #[cfg(test)]
 mod test;
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env};
 
-use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, token, Address, BytesN,
-    Env, Symbol, Vec,
-};
+mod storage;
+mod types;
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MilestoneStatus {
-    Pending = 0,
-    Released = 1,
-}
+#[cfg(test)]
+mod test;
 
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Milestone {
-    pub id: u32,
-    pub amount: i128,
-    pub status: MilestoneStatus,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Project {
-    pub id: BytesN<32>,
-    pub creator: Address,
-    pub oracle: Address,
-    pub token: Address,
-    pub goal: i128,
-    pub milestones: Vec<Milestone>,
-    pub balance: i128,
-}
+use storage::{get_and_increment_project_id, get_oracle, load_project, save_project, set_oracle};
+pub use types::{Project, ProjectStatus};
 
 #[contracttype]
 pub enum DataKey {
@@ -140,14 +118,52 @@ impl PifpProtocol {
         );
     }
 
-    /// Release funds for a specific milestone.
+    /// Set the trusted oracle/verifier address.
     ///
-    /// NOTE: This is a skeleton. A real implementation would:
-    /// - Load the project from the registry via `get_project`
-    /// - Verify the submitted proof against `proof_hash`
-    /// - Enforce milestones / attestations / oracle signatures
-    /// - Transfer/release funds and update balances / status
-    pub fn verify_and_release(_env: Env, _project_id: u64, _submitted_proof_hash: BytesN<32>) {
-        // TODO: implement verification logic and release mechanism.
+    /// - `admin` must authorize the call (the caller setting the oracle).
+    /// - `oracle` is the address that will be permitted to verify proofs.
+    pub fn set_oracle(env: Env, admin: Address, oracle: Address) {
+        admin.require_auth();
+        set_oracle(&env, &oracle);
+    }
+
+    /// Verify proof of impact and update project status.
+    ///
+    /// The registered oracle submits a proof hash. If it matches the project's
+    /// stored `proof_hash`, the project status transitions to `Completed`.
+    ///
+    /// NOTE: This is a mocked verification (hash equality).
+    /// The structure is prepared for future ZK-STARK verification.
+    ///
+    /// - Only the registered oracle may call this.
+    /// - The project must be in `Funding` or `Active` status.
+    /// - `submitted_proof_hash` must match the project's `proof_hash`.
+    pub fn verify_and_release(env: Env, project_id: u64, submitted_proof_hash: BytesN<32>) {
+        // Ensure caller is the registered oracle.
+        let oracle = get_oracle(&env);
+        oracle.require_auth();
+
+        // Load the project.
+        let mut project = load_project(&env, project_id);
+
+        // Ensure the project is in a verifiable state.
+        match project.status {
+            ProjectStatus::Funding | ProjectStatus::Active => {}
+            ProjectStatus::Completed => panic!("project already completed"),
+            ProjectStatus::Expired => panic!("project has expired"),
+        }
+
+        // Mocked ZK verification: compare submitted hash to stored hash.
+        if submitted_proof_hash != project.proof_hash {
+            panic!("proof verification failed: hash mismatch");
+        }
+
+        // Transition to Completed.
+        project.status = ProjectStatus::Completed;
+        save_project(&env, &project);
+
+        // Emit verification event.
+        env.events()
+            .publish((symbol_short!("verified"),), project_id);
     }
 }

@@ -14,6 +14,8 @@ fn setup() -> (Env, PifpProtocolClient<'static>) {
     (env, client)
 }
 
+// ── Project Registry Tests ──────────────────────────────────────────
+
 #[test]
 fn test_register_project_success() {
     let (env, client) = setup();
@@ -93,4 +95,111 @@ fn test_get_project_not_found() {
     let (_env, client) = setup();
 
     client.get_project(&42);
+}
+
+// ── ZK-Proof Verification Tests ─────────────────────────────────────
+
+#[test]
+fn test_set_oracle() {
+    let (env, client) = setup();
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+
+    client.set_oracle(&admin, &oracle);
+
+    // Verify by using the oracle for verification (indirectly tested).
+    // Direct storage read is not possible from the test client,
+    // so we verify via a successful verify_and_release below.
+}
+
+#[test]
+fn test_verify_and_release_success() {
+    let (env, client) = setup();
+
+    let creator = Address::generate(&env);
+    let proof_hash = BytesN::from_array(&env, &[10u8; 32]);
+    let deadline: u64 = env.ledger().timestamp() + 86_400;
+
+    let project = client.register_project(&creator, &500, &proof_hash, &deadline);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    client.set_oracle(&admin, &oracle);
+
+    // Oracle verifies with the correct proof hash.
+    client.verify_and_release(&project.id, &proof_hash);
+
+    // Check project status is now Completed.
+    let updated = client.get_project(&project.id);
+    assert_eq!(updated.status, ProjectStatus::Completed);
+}
+
+#[test]
+#[should_panic(expected = "proof verification failed: hash mismatch")]
+fn test_verify_wrong_hash() {
+    let (env, client) = setup();
+
+    let creator = Address::generate(&env);
+    let proof_hash = BytesN::from_array(&env, &[10u8; 32]);
+    let wrong_hash = BytesN::from_array(&env, &[99u8; 32]);
+    let deadline: u64 = env.ledger().timestamp() + 86_400;
+
+    let project = client.register_project(&creator, &500, &proof_hash, &deadline);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    client.set_oracle(&admin, &oracle);
+
+    client.verify_and_release(&project.id, &wrong_hash);
+}
+
+#[test]
+#[should_panic(expected = "project already completed")]
+fn test_verify_already_completed() {
+    let (env, client) = setup();
+
+    let creator = Address::generate(&env);
+    let proof_hash = BytesN::from_array(&env, &[10u8; 32]);
+    let deadline: u64 = env.ledger().timestamp() + 86_400;
+
+    let project = client.register_project(&creator, &500, &proof_hash, &deadline);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    client.set_oracle(&admin, &oracle);
+
+    // First verification succeeds.
+    client.verify_and_release(&project.id, &proof_hash);
+
+    // Second verification should fail.
+    client.verify_and_release(&project.id, &proof_hash);
+}
+
+#[test]
+#[should_panic(expected = "project not found")]
+fn test_verify_nonexistent_project() {
+    let (env, client) = setup();
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    client.set_oracle(&admin, &oracle);
+
+    let fake_hash = BytesN::from_array(&env, &[0u8; 32]);
+    client.verify_and_release(&999, &fake_hash);
+}
+
+#[test]
+#[should_panic(expected = "oracle not set")]
+fn test_verify_without_oracle_set() {
+    let (env, client) = setup();
+
+    let creator = Address::generate(&env);
+    let proof_hash = BytesN::from_array(&env, &[10u8; 32]);
+    let deadline: u64 = env.ledger().timestamp() + 86_400;
+
+    let project = client.register_project(&creator, &500, &proof_hash, &deadline);
+
+    // No oracle set — should panic.
+    client.verify_and_release(&project.id, &proof_hash);
 }
