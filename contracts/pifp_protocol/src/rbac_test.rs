@@ -1,12 +1,6 @@
+use soroban_sdk::{testutils::Address as _, vec, Address, BytesN, Env};
 
-#![cfg(test)]
-
-use soroban_sdk::{
-    testutils::{Address as _, Ledger},
-    Address, BytesN, Env, vec,
-};
-
-use crate::{PifpProtocol, PifpProtocolClient, Role, Error};
+use crate::{PifpProtocol, PifpProtocolClient, Role};
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -87,7 +81,7 @@ fn test_super_admin_can_grant_auditor() {
 fn test_admin_can_grant_project_manager() {
     let (env, client, super_admin) = setup_with_init();
     let admin = Address::generate(&env);
-    let pm    = Address::generate(&env);
+    let pm = Address::generate(&env);
     client.grant_role(&super_admin, &admin, &Role::Admin);
     client.grant_role(&admin, &pm, &Role::ProjectManager);
     assert!(client.has_role(&pm, &Role::ProjectManager));
@@ -96,7 +90,7 @@ fn test_admin_can_grant_project_manager() {
 #[test]
 fn test_admin_can_grant_oracle() {
     let (env, client, super_admin) = setup_with_init();
-    let admin  = Address::generate(&env);
+    let admin = Address::generate(&env);
     let oracle = Address::generate(&env);
     client.grant_role(&super_admin, &admin, &Role::Admin);
     client.grant_role(&admin, &oracle, &Role::Oracle);
@@ -107,7 +101,7 @@ fn test_admin_can_grant_oracle() {
 #[should_panic]
 fn test_admin_cannot_grant_super_admin() {
     let (env, client, super_admin) = setup_with_init();
-    let admin    = Address::generate(&env);
+    let admin = Address::generate(&env);
     let impostor = Address::generate(&env);
     client.grant_role(&super_admin, &admin, &Role::Admin);
     client.grant_role(&admin, &impostor, &Role::SuperAdmin);
@@ -126,7 +120,7 @@ fn test_no_role_cannot_grant() {
 #[should_panic]
 fn test_project_manager_cannot_grant() {
     let (env, client, super_admin) = setup_with_init();
-    let pm     = Address::generate(&env);
+    let pm = Address::generate(&env);
     let target = Address::generate(&env);
     client.grant_role(&super_admin, &pm, &Role::ProjectManager);
     client.grant_role(&pm, &target, &Role::Auditor);
@@ -148,7 +142,7 @@ fn test_super_admin_can_revoke_admin() {
 fn test_admin_can_revoke_project_manager() {
     let (env, client, super_admin) = setup_with_init();
     let admin = Address::generate(&env);
-    let pm    = Address::generate(&env);
+    let pm = Address::generate(&env);
     client.grant_role(&super_admin, &admin, &Role::Admin);
     client.grant_role(&admin, &pm, &Role::ProjectManager);
     client.revoke_role(&admin, &pm);
@@ -166,7 +160,7 @@ fn test_cannot_revoke_super_admin_via_revoke_role() {
 #[should_panic]
 fn test_project_manager_cannot_revoke() {
     let (env, client, super_admin) = setup_with_init();
-    let pm     = Address::generate(&env);
+    let pm = Address::generate(&env);
     let target = Address::generate(&env);
     client.grant_role(&super_admin, &pm, &Role::ProjectManager);
     client.grant_role(&super_admin, &target, &Role::Auditor);
@@ -197,10 +191,16 @@ fn test_transfer_super_admin() {
 #[test]
 fn test_project_manager_can_register() {
     let (env, client, super_admin) = setup_with_init();
-    let pm       = Address::generate(&env);
-    let tokens   = vec![&env, Address::generate(&env)];
+    let pm = Address::generate(&env);
+    let tokens = vec![&env, Address::generate(&env)];
     client.grant_role(&super_admin, &pm, &Role::ProjectManager);
-    let project = client.register_project(&pm, &tokens, &1000i128, &dummy_proof(&env), &future_deadline(&env));
+    let project = client.register_project(
+        &pm,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
     assert_eq!(project.creator, pm);
 }
 
@@ -210,7 +210,13 @@ fn test_no_role_cannot_register_project() {
     let (env, client, _) = setup_with_init();
     let nobody = Address::generate(&env);
     let tokens = vec![&env, Address::generate(&env)];
-    client.register_project(&nobody, &tokens, &1000i128, &dummy_proof(&env), &future_deadline(&env));
+    client.register_project(
+        &nobody,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
 }
 
 // ─── 6. set_oracle + verify_and_release ─────────────────
@@ -222,13 +228,14 @@ fn test_oracle_can_verify() {
     let creator = Address::generate(&env);
     let tokens = vec![&env, Address::generate(&env)];
     let proof = dummy_proof(&env);
-    
+
     client.set_oracle(&super_admin, &oracle);
     client.grant_role(&super_admin, &creator, &Role::ProjectManager);
-    
-    let project = client.register_project(&creator, &tokens, &100i128, &proof, &future_deadline(&env));
+
+    let project =
+        client.register_project(&creator, &tokens, &100i128, &proof, &future_deadline(&env));
     client.verify_and_release(&oracle, &project.id, &proof);
-    
+
     let completed = client.get_project(&project.id);
     assert_eq!(completed.status, crate::ProjectStatus::Completed);
 }
@@ -237,11 +244,11 @@ fn test_oracle_can_verify() {
 #[should_panic]
 fn test_non_oracle_cannot_verify() {
     let (env, client, super_admin) = setup_with_init();
-    let pm      = Address::generate(&env);
+    let pm = Address::generate(&env);
     let impersonator = Address::generate(&env);
     let tokens = vec![&env, Address::generate(&env)];
     let proof = dummy_proof(&env);
-    
+
     client.grant_role(&super_admin, &pm, &Role::ProjectManager);
     let project = client.register_project(&pm, &tokens, &100i128, &proof, &future_deadline(&env));
     client.verify_and_release(&impersonator, &project.id, &proof);

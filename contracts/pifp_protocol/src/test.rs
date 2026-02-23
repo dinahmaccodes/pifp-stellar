@@ -5,14 +5,14 @@ use soroban_sdk::{
     token, Address, BytesN, Env, Vec,
 };
 
-use crate::{PifpProtocol, PifpProtocolClient, Role, ProjectStatus};
+use crate::{PifpProtocol, PifpProtocolClient, ProjectStatus, Role};
 
 // ─── Helpers ─────────────────────────────────────────────
 
 fn setup() -> (Env, PifpProtocolClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     // Initialize ledger with a non-zero timestamp
     env.ledger().set(LedgerInfo {
         timestamp: 100_000,
@@ -25,7 +25,7 @@ fn setup() -> (Env, PifpProtocolClient<'static>) {
         max_entry_ttl: 1000,
     });
 
-    let contract_id = env.register_contract(None, PifpProtocol);
+    let contract_id = env.register(PifpProtocol, ());
     let client = PifpProtocolClient::new(&env, &contract_id);
     (env, client)
 }
@@ -37,6 +37,7 @@ fn setup_with_init() -> (Env, PifpProtocolClient<'static>, Address) {
     (env, client, super_admin)
 }
 
+#[allow(dead_code)]
 fn create_token_contract<'a>(env: &Env, admin: &Address) -> token::Client<'a> {
     let addr = env.register_stellar_asset_contract_v2(admin.clone());
     token::Client::new(env, &addr.address())
@@ -71,12 +72,12 @@ fn test_init_twice_panics() {
 #[test]
 fn test_register_project_success() {
     let (env, client, super_admin) = setup_with_init();
-    
+
     let _creator = Address::generate(&env);
     let token = Address::generate(&env);
     let mut tokens = Vec::new(&env);
     tokens.push_back(token.clone());
-    
+
     let proof_hash = BytesN::from_array(&env, &[1u8; 32]);
     let goal: i128 = 1_000;
     let deadline = future_deadline(&env);
@@ -100,8 +101,14 @@ fn test_register_duplicate_tokens_fails() {
     let (env, client, admin) = setup_with_init();
     let token = Address::generate(&env);
     let tokens = Vec::from_array(&env, [token.clone(), token.clone()]);
-    
-    client.register_project(&admin, &tokens, &1000i128, &dummy_proof(&env), &future_deadline(&env));
+
+    client.register_project(
+        &admin,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
 }
 
 #[test]
@@ -109,8 +116,14 @@ fn test_register_duplicate_tokens_fails() {
 fn test_register_zero_goal_fails() {
     let (env, client, admin) = setup_with_init();
     let tokens = Vec::from_array(&env, [Address::generate(&env)]);
-    
-    client.register_project(&admin, &tokens, &0i128, &dummy_proof(&env), &future_deadline(&env));
+
+    client.register_project(
+        &admin,
+        &tokens,
+        &0i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
 }
 
 #[test]
@@ -119,8 +132,14 @@ fn test_register_past_deadline_fails() {
     let (env, client, admin) = setup_with_init();
     let tokens = Vec::from_array(&env, [Address::generate(&env)]);
     let past_deadline = env.ledger().timestamp() - 1;
-    
-    client.register_project(&admin, &tokens, &1000i128, &dummy_proof(&env), &past_deadline);
+
+    client.register_project(
+        &admin,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &past_deadline,
+    );
 }
 
 #[test]
@@ -130,10 +149,16 @@ fn test_deposit_zero_amount_fails() {
     let creator = Address::generate(&env);
     let token = Address::generate(&env);
     let tokens = Vec::from_array(&env, [token.clone()]);
-    
+
     client.grant_role(&admin, &creator, &Role::ProjectManager);
-    let project = client.register_project(&creator, &tokens, &1000i128, &dummy_proof(&env), &future_deadline(&env));
-    
+    let project = client.register_project(
+        &creator,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
+
     client.deposit(&project.id, &creator, &token, &0i128);
 }
 
@@ -143,11 +168,17 @@ fn test_deposit_after_deadline_fails() {
     let (env, client, admin) = setup_with_init();
     let token = Address::generate(&env);
     let tokens = Vec::from_array(&env, [token.clone()]);
-    
+
     let pm = Address::generate(&env);
     client.grant_role(&admin, &pm, &Role::ProjectManager);
-    let project = client.register_project(&pm, &tokens, &1000i128, &dummy_proof(&env), &future_deadline(&env));
-    
+    let project = client.register_project(
+        &pm,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
+
     // Fast-forward time
     env.ledger().set(LedgerInfo {
         timestamp: future_deadline(&env) + 1,
@@ -159,7 +190,7 @@ fn test_deposit_after_deadline_fails() {
         min_persistent_entry_ttl: 10,
         max_entry_ttl: 1000,
     });
-    
+
     client.deposit(&project.id, &admin, &token, &100i128);
 }
 
@@ -167,13 +198,13 @@ fn test_deposit_after_deadline_fails() {
 
 #[test]
 fn test_admin_can_pause_and_unpause() {
-    let (env, client, admin) = setup_with_init();
-    
+    let (_env, client, admin) = setup_with_init();
+
     assert!(!client.is_paused());
-    
+
     client.pause(&admin);
     assert!(client.is_paused());
-    
+
     client.unpause(&admin);
     assert!(!client.is_paused());
 }
@@ -212,13 +243,12 @@ fn test_project_exists_and_maybe_load_helpers() {
         let cfg = crate::storage::maybe_load_project_config(&env, project.id)
             .expect("config should exist");
         assert_eq!(cfg.id, project.id);
-        let st = crate::storage::maybe_load_project_state(&env, project.id)
-            .expect("state should exist");
+        let st =
+            crate::storage::maybe_load_project_state(&env, project.id).expect("state should exist");
         assert_eq!(st.donation_count, 0);
 
         // maybe_load_project returns full struct
-        let loaded = crate::storage::maybe_load_project(&env, project.id)
-            .expect("project exists");
+        let loaded = crate::storage::maybe_load_project(&env, project.id).expect("project exists");
         assert_eq!(loaded.creator, project.creator);
 
         // load_project_pair should match load_project
@@ -242,7 +272,7 @@ fn test_load_project_pair_panics_for_missing() {
 fn test_non_admin_cannot_pause() {
     let (env, client, _admin) = setup_with_init();
     let rando = Address::generate(&env);
-    
+
     client.pause(&rando);
 }
 
@@ -251,9 +281,15 @@ fn test_non_admin_cannot_pause() {
 fn test_registration_fails_when_paused() {
     let (env, client, admin) = setup_with_init();
     client.pause(&admin);
-    
+
     let tokens = Vec::from_array(&env, [Address::generate(&env)]);
-    client.register_project(&admin, &tokens, &1000i128, &dummy_proof(&env), &future_deadline(&env));
+    client.register_project(
+        &admin,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
 }
 
 #[test]
@@ -262,11 +298,17 @@ fn test_deposit_fails_when_paused() {
     let (env, client, admin) = setup_with_init();
     let token = Address::generate(&env);
     let tokens = Vec::from_array(&env, [token.clone()]);
-    
+
     let pm = Address::generate(&env);
     client.grant_role(&admin, &pm, &Role::ProjectManager);
-    let project = client.register_project(&pm, &tokens, &1000i128, &dummy_proof(&env), &future_deadline(&env));
-    
+    let project = client.register_project(
+        &pm,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
+
     client.pause(&admin);
     client.deposit(&project.id, &pm, &token, &100i128);
 }
@@ -275,13 +317,19 @@ fn test_deposit_fails_when_paused() {
 fn test_queries_work_when_paused() {
     let (env, client, admin) = setup_with_init();
     let tokens = Vec::from_array(&env, [Address::generate(&env)]);
-    
+
     let pm = Address::generate(&env);
     client.grant_role(&admin, &pm, &Role::ProjectManager);
-    let project = client.register_project(&pm, &tokens, &1000i128, &dummy_proof(&env), &future_deadline(&env));
-    
+    let project = client.register_project(
+        &pm,
+        &tokens,
+        &1000i128,
+        &dummy_proof(&env),
+        &future_deadline(&env),
+    );
+
     client.pause(&admin);
-    
+
     // Query should still work
     let loaded = client.get_project(&project.id);
     assert_eq!(loaded.id, project.id);

@@ -448,11 +448,17 @@ proptest! {
         assert_project_immutable_fields(&project, &final_project);
         assert_eq!(final_project.status, ProjectStatus::Completed);
 
-        // Balance should be zero after verification (funds transferred to creator).
+        // Phase 4: Balance verification after verification.
+        // Balance should be zero after verification — funds are drained and
+        // transferred to the creator during verify_and_release.
         let post_verify_balance = client.get_balance(&project.id, &token_client.address);
-        assert_eq!(post_verify_balance, 0);
+        assert_eq!(post_verify_balance, 0i128);
 
-        // Phase 4: Double-verify should fail.
+        // Creator's actual token balance should equal what was deposited.
+        let creator_actual_balance = token_client.balance(&creator);
+        assert_eq!(creator_actual_balance, total_deposited);
+
+        // Phase 5: Double-verify should fail.
         let result = client.try_verify_and_release(&oracle, &project.id, &proof_hash);
         prop_assert!(result.is_err(), "double verification should fail");
     }
