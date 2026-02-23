@@ -42,9 +42,9 @@ mod rbac_test;
 #[cfg(test)]
 mod test;
 #[cfg(test)]
-mod test_events;
-#[cfg(test)]
 mod test_donation_count;
+#[cfg(test)]
+mod test_events;
 
 pub use events::emit_funds_released;
 pub use rbac::Role;

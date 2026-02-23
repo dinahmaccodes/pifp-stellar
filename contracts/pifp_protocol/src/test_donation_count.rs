@@ -1,9 +1,6 @@
 extern crate std;
 
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, BytesN, Env,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, BytesN, Env};
 
 use crate::{PifpProtocol, PifpProtocolClient, Role};
 

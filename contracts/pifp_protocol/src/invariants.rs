@@ -130,6 +130,7 @@ pub fn assert_donation_count_monotonic(count_before: u32, count_after: u32) {
 
 /// INV-10: donation_count must be non-negative (this is enforced by u32 type,
 /// but we include it for documentation completeness).
+#[allow(clippy::assertions_on_constants)]
 pub fn assert_donation_count_non_negative(project: &Project) {
     // donation_count is u32, so it's always >= 0 by type definition
     // This assertion is a no-op but documents the invariant

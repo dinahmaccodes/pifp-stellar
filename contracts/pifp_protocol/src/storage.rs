@@ -362,4 +362,3 @@ pub fn mark_donator_seen(env: &Env, project_id: u64, donator: &Address, token: &
     env.storage().persistent().set(&key, &true);
     bump_persistent(env, &key);
 }
-
